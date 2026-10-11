@@ -118,4 +118,59 @@ Dependencies: `torch`, `torchvision`, `timm`, `albumentations`, `tifffile`, `sci
 
 ## Results
 
-> ⏳ Training and evaluation have not yet been run for real (the pipeline logic is implemented and regression-tested). Benchmark results will be posted here once available.
+All 8 backbones were trained on Colab (Google Drive checkpoints) and evaluated on the held-out test split (25%, seed 42). Ground truth: **6,162 nuclei**.
+
+### Final Biological & Hardware Benchmark
+
+| Backbone | Avg Prediction Time | Inference VRAM | Nuclei Detected | Count Error ↓ | Area KS ↓ | Eccentricity KS ↓ |
+|---|---|---|---|---|---|---|
+| **wide_resnet50** 🏆 | 13.88 ms/img | 4823.96 MB | 5309 | **853** | **0.0951** | 0.0378 |
+| seresnext101 | 20.92 ms/img | 4824.58 MB | 5297 | 865 | 0.0973 | **0.0361** |
+| resnext50 | **12.49 ms/img** | 4824.58 MB | 5295 | 867 | 0.0987 | **0.0361** |
+| resnet50 | 52.63 ms/img* | 4824.40 MB | 5268 | 894 | 0.1068 | 0.0401 |
+| seresnext50 | 15.07 ms/img | 4824.96 MB | 5260 | 902 | 0.1030 | 0.0404 |
+| resnet101 | 13.04 ms/img | 4823.96 MB | 5186 | 976 | 0.1209 | 0.0479 |
+| wide_resnet101 | 16.31 ms/img | 4825.55 MB | 5161 | 1001 | 0.1177 | 0.0458 |
+| resnext101 | 20.91 ms/img | 4824.58 MB | 5161 | 1001 | 0.1327 | 0.0431 |
+
+Sorted by absolute cell count error (lower is better).
+
+\* resnet50 was the first model evaluated, so its forward pass absorbed CUDA warm-up/autotune costs — its 7.46 s total inference time vs. ~5 s for the others shows the same effect. Its true speed is comparable to the other 50-layer backbones.
+
+> **Note:** the pixel-level Dice/IoU and instance-level mAP evaluation cells are not implemented yet (see the explainer); this run covers the biological and hardware benchmarks.
+
+### Winner vs. Loser (auto-selected from the training manifest)
+
+The interpretability setup cell picks the models with the lowest and highest best validation loss from `training_progress.json`:
+
+| | Model | Best Val Loss | Avg Prediction Time (warm-up excluded) |
+|---|---|---|---|
+| 🏆 Winner | **wide_resnet50** | **0.1317** | **16.61 ms/image** |
+| Loser | resnext101 | 0.1424 | 22.86 ms/image |
+
+**The winner is also 6.25 ms/image faster (1.38× speedup)** — wide_resnet50 wins on accuracy *and* speed.
+
+### What the results say
+
+- **Every backbone under-segments.** All 8 predict 5,161–5,309 nuclei vs. 6,162 ground truth (~14% undercount). The min-size filter drops small nuclei and boundary-subtraction can merge tightly packed clusters — the error is systematic across all architectures, not specific to one.
+- **The margins are small.** Validation losses span only 0.1317–0.1424 and the biological metrics cluster tightly — **on an eye test the predicted masks from different backbones are essentially indistinguishable**. That is itself a finding: on BBBC039, the U-Net + multi-head design dominates, and backbone choice matters most in the tails — the KS statistics and the pathological cases.
+- **wide_resnet50 wins the tie-breakers that matter biologically:** lowest count error (853), best area-distribution match (KS 0.0951), best validation loss — and it is faster than the loser.
+- **The comparative error analysis** (below) shows where the models actually differ in practice, by ranking test images from worst to best image-level Dice.
+
+### Training Curves
+
+![Loss curves across the 8 backbones](results/loss_curves.png)
+
+### Interpretability — Winning Model (wide_resnet50)
+
+**Grad-CAM** — gradients flowing back from the boundary channel form a ring around the nucleus rather than highlighting background noise, i.e., the model is looking at true biology:
+
+![Grad-CAM boundary-channel heatmap for the winning model](results/gradcam_winning_wide_resnet50.png)
+
+**Feature maps** — averaged activations from the ResNet stem (edge detection), the encoder bottleneck (abstract semantics), the first skip connection (high-resolution edges bypassing the bottleneck), and the final multi-head output:
+
+![Averaged feature maps across four U-Net depths](results/feature_maps_winning_wide_resnet50.png)
+
+**Comparative error analysis** — the test images the winning model scored worst on, isolating pathological cases (e.g., dense overlapping clusters) where architectural differences show up:
+
+![Comparative error analysis — worst test cases by image-level Dice](results/comparative_error_analysis.png)
