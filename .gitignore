@@ -1,0 +1,27 @@
+# Secrets — never commit tokens or credentials
+.env
+*.env
+.env.*
+
+# Dataset — BBBC039 (~282 MB), re-downloaded automatically by the notebook
+src/dataset/
+dataset/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Training artifacts (large binaries, re-trainable)
+checkpoints/
+checkpoints_local/
+*.pth
+*.pt
+*.ckpt
+
+# OS
+.DS_Store
+Thumbs.db
